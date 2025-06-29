@@ -125,7 +125,9 @@ Add this line to run the script twice a day, as recommended by Let's Encrypt:
 
 ```
 # Check for certificate renewal twice daily
-15 2,14 * * * /usr/local/sbin/cert_renewal_handler.sh
+# Check for Nextcloud certificate renewal twice daily
+# Usage: bash <script_path> <ssh_user> <target_server_ip> <port_forward_remark>
+15 2,14 * * * bash /usr/local/sbin/cert_renewal_handler.sh nextcloudadmin 192.168.1.10 "certbot-http-renewal"
 ```
 
 ### Integrate Logs with the WUI

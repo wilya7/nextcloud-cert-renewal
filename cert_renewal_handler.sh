@@ -20,26 +20,28 @@
 # =================================================================================
 
 
-# --- Configuration ---
-# ---!!!--- EDIT THESE VARIABLES TO MATCH YOUR SETUP ---!!!---
-
-# The IP address of your Nextcloud server on the ORANGE network.
-NEXTCLOUD_SERVER="192.168.1.10" # Example: "192.168.1.10"
-
-# The username for SSHing into the Nextcloud server.
-SSH_USER="your_ssh_user" # Example: "nextcloudadmin"
-
-# --- NEW ---
-# The unique Remark/Comment you gave your Port 80 forwarding rule in the WUI.
-# This is how the script identifies the correct rule to toggle.
-# It MUST be unique.
-PORT_FORWARD_REMARK="certbot-http-renewal"
-
+# --- Static Configuration ---
 # Location for the log file on the IPFire machine.
 LOG_FILE="/var/log/cert_renewal.log"
+# --- End of Static Configuration ---
 
-# --- End of Configuration ---
+# --- Argument Parsing ---
+# This script requires three arguments to be passed from the command line:
+# 1. The SSH username on the target server.
+# 2. The IP address of the target server.
+# 3. The unique remark used for the port forwarding rule.
+if [ "$#" -ne 3 ]; then
+    echo "ERROR: Incorrect number of arguments."
+    echo "Usage: $0 <ssh_user> <target_server_ip> <port_forward_remark>"
+    echo "Example: $0 nextcloudadmin 192.168.1.10 \"certbot-http-renewal\""
+    exit 1
+fi
 
+# Assign command-line arguments to variables.
+SSH_USER=$1
+NEXTCLOUD_SERVER=$2
+PORT_FORWARD_REMARK=$3
+# --- End of Argument Parsing ---
 
 # --- Script Setup ---
 
