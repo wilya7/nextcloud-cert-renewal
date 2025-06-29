@@ -72,6 +72,7 @@ Set up passwordless SSH access and harden the SSH server on your DMZ machine.
 3.  **Restart the SSH service** on the DMZ server: `sudo systemctl restart sshd`
 
 4.  **(Optional) Add a Local Firewall** For even more security, you can use a local firewall on the DMZ server.
+
     a. On the DMZ server, install ufw:
     ```bash
     sudo apt update && sudo apt install ufw
