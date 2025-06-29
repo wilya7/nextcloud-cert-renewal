@@ -100,24 +100,39 @@ toggle_location_block() {
 # Enable or disable our specific port forwarding rule.
 toggle_port_forward() {
     local state=$1 # Takes one argument: "on" (enable) or "off" (disable)
+    local temp_file
+    # Create a temporary file safely.
+    temp_file=$(mktemp) || { log "ERROR: Failed to create temp file for firewall modification."; exit 1; }
 
-    # Check if a rule with the specified remark actually exists.
-    # We now look for a line starting with DNAT= that also contains the remark.
-    if ! grep -q "^DNAT=.*${PORT_FORWARD_REMARK}$" "$PORT_FORWARD_RULES_FILE"; then
-        log "ERROR: Cannot find an active DNAT rule with the remark '$PORT_FORWARD_REMARK'."
-        log "Please check the rule in the WUI; it must be a Destination NAT (Port Forward) rule."
+    # First, verify the rule actually exists by checking for the unique remark (field 18)
+    # and ensuring it is a 'dnat' rule (field 32). This is much safer.
+    # The awk script will exit with success (0) if found, and failure (1) otherwise.
+    if ! awk -F, -v remark="$PORT_FORWARD_REMARK" '{if ($18 == remark && $32 == "dnat") exit 0} ENDFILE {exit 1}' "$PORT_FORWARD_RULES_FILE"; then
+        log "ERROR: Cannot find a DNAT rule with the remark '$PORT_FORWARD_REMARK'."
+        log "Please check the rule in the WUI; remark must be unique and rule type must be DNAT."
+        rm -f "$temp_file"
         exit 1
     fi
 
+    # Use awk to find the line based on remark and rule type, then set the 4th field.
     if [ "$state" == "on" ]; then
         log "ENABLING Port Forward rule: '$PORT_FORWARD_REMARK'"
-        # Find the line starting with DNAT=, containing the remark, and change its
-        # FIRST field from 'off' to 'on'. The rule fields are comma-separated.
-        sed -i "/^DNAT=.*,${PORT_FORWARD_REMARK}$/s/off/on/" "$PORT_FORWARD_RULES_FILE"
+        awk -v remark="$PORT_FORWARD_REMARK" 'BEGIN{FS=OFS=","} {if($18==remark && $32=="dnat"){$4="ON"}; print}' "$PORT_FORWARD_RULES_FILE" > "$temp_file"
     else
         log "DISABLING Port Forward rule: '$PORT_FORWARD_REMARK'"
-        # Find the line and change its FIRST field from 'on' to 'off'.
-        sed -i "/^DNAT=.*,${PORT_FORWARD_REMARK}$/s/on/off/" "$PORT_FORWARD_RULES_FILE"
+        awk -v remark="$PORT_FORWARD_REMARK" 'BEGIN{FS=OFS=","} {if($18==remark && $32=="dnat"){$4=""}; print}' "$PORT_FORWARD_RULES_FILE" > "$temp_file"
+    fi
+
+    # Atomically and safely replace the original file with the modified version.
+    # We check that the temp file is not empty before overwriting the original.
+    if [ -s "$temp_file" ]; then
+        # Using cat and redirect is a safe way to preserve permissions
+        cat "$temp_file" > "$PORT_FORWARD_RULES_FILE"
+        rm -f "$temp_file"
+    else
+        log "ERROR: Firewall rule modification failed, temporary file is empty. No changes made."
+        rm -f "$temp_file"
+        exit 1
     fi
 }
 
