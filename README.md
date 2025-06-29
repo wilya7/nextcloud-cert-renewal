@@ -1,108 +1,64 @@
 -----
 
-# 🛡️ Automated Let's Encrypt Renewal for IPFire DMZ
+# IPFire Nextcloud Certificate Renewal Handler
 
-> This project provides a secure, automated script for renewing Let's Encrypt SSL certificates on a server located in an IPFire **ORANGE (DMZ)** network. It runs on the IPFire router itself and safely manages the temporary firewall changes required for the Let's Encrypt validation process.
+This Bash script is designed to run on an IPFire firewall and automates the process of renewing Let's Encrypt certificates for a server located on the ORANGE network (DMZ).
 
------
-
-## How It Works ⚙️
-
-The script follows a strict, safety-oriented procedure to handle certificate renewals.
-
-| Step | Action | Purpose |
-| :--- | :--- | :--- |
-| 1. **Dry-Run** | Executes `certbot renew --dry-run` via SSH. | Checks if a renewal is necessary without making any system changes. |
-| 2. **Modify** | If needed, it edits IPFire's own config files to enable the Port 80 NAT rule and disable the Location Block. | This is the **safest method**, as it uses IPFire's native functions, just like the WUI does. It avoids raw `iptables` commands. |
-| 3. **Reload** | Triggers `/etc/init.d/firewall reload`. | Applies the temporary, less-secure settings. |
-| 4. **Renew** | Executes the real `certbot renew` command on the remote server. | Performs the actual certificate renewal. |
-| 5. **Cleanup** | **Guaranteed via a `trap`**, this function runs on any script exit (success or failure). It reverts all configuration changes and reloads the firewall. | Ensures your network is **always** returned to its secure state. |
+It securely handles the temporary firewall modifications required for the ACME `http-01` challenge and restores all security settings upon completion or failure.
 
 -----
 
-## 📋 Setup Checklist & Prerequisites
+## ⚙️ How It Works
 
-Make sure you have the following in place before you begin.
+The script follows a robust and secure sequence of operations:
 
-  - [ ] An up-and-running **IPFire router**.
-  - [ ] A **Debian-based server** (e.g., Ubuntu) in the ORANGE (DMZ) zone.
-  - [ ] `certbot` is installed and working on the DMZ server.
-  - [ ] **Static IP addresses** are configured for both the IPFire ORANGE interface and the DMZ server.
+1.  **Fetch Certificate Status**: It connects to the target server via SSH and runs `sudo certbot certificates` to get the real status of the currently installed certificate.
+2.  **Check Expiry Date**: It parses the certificate's expiry date from the output and calculates the number of days remaining until it expires.
+3.  **Conditional Renewal**: If the certificate is due for renewal (by default, within a 30-day threshold), it proceeds with the renewal process. If not, it logs the status and exits gracefully.
+4.  **Open Firewall**: For the renewal, it temporarily opens the firewall by:
+      * Disabling the IPFire **Location Block**.
+      * Enabling a specific, pre-existing Port 80 forwarding rule that points to the target server.
+5.  **Trigger Renewal**: It connects to the target server again via SSH and executes `sudo certbot renew` to perform the actual renewal.
+6.  **Log Results**: The outcome of the renewal attempt (success or failure) is logged to `/var/log/cert_renewal.log`.
+7.  **Critical Cleanup**: A `trap` is set to guarantee that a cleanup function runs whenever the script exits, for any reason. This function **always** restores the firewall to its secure state by re-enabling the Location Block and disabling the Port 80 forwarding rule.
 
 -----
 
-## 🛠️ Installation & Configuration
+## 📋 Prerequisites & Installation
 
-### Part 1: IPFire Port Forwarding Rule
+### Part 1: On the Target Server (e.g., Nextcloud)
 
-Create a disabled-by-default NAT rule that the script can activate when needed.
+1.  **Certbot Installed**: The Let's Encrypt `certbot` client must be installed and configured.
+2.  **SSH Server**: An SSH server must be running and accessible from the IPFire's ORANGE interface.
+3.  **Sudo Permissions (Crucial)**: The script executes `certbot` on the remote server using `sudo`, which will fail if it prompts for a password. You **must** configure the `sudoers` file to allow the SSH user to run commands without a password.
+      * On the target server, run `sudo visudo`.
+      * Add the following line at the end of the file, replacing `nextcloudadmin` with the actual username you will use for SSH. This grants `nextcloudadmin` passwordless `sudo` rights.
+        ```
+        nextcloudadmin ALL=(ALL) NOPASSWD: ALL
+        ```
 
-1.  In the IPFire WUI, go to `Firewall` -\> `Firewall Rules` -\> `New rule`.
-2.  **Source**: `Standard networks` -\> `Red`
-3.  **NAT**: Check the `Use Network Address Translation (NAT)` box.
-4.  **Destination**: The static IP of your DMZ server.
-5.  **Protocol**: `TCP`, Destination Port `80`.
-6.  **Remark**: `certbot-http-renewal`  *(This must match the script's configuration)*.
-7.  **Save the rule**, making sure it is **DISABLED** (unchecked).
+### Part 2: On the IPFire Firewall
 
-### Part 2: Secure SSH Connection
+1.  **Port Forward Rule**: Create a Port Forwarding rule in the IPFire WUI (`Firewall` -\> `Firewall Rules` -\> `New rule`).
 
-Set up passwordless SSH access and harden the SSH server on your DMZ machine.
+      * **Source**: `Standard Networks` -\> `Any`
+      * **NAT**: `Use Network Address Translation (NAT)` -\> `Destination NAT (Port Forwarding)`
+      * **Destination**: `Firewall` -\> `RED`
+      * **Protocol**: `TCP`
+      * **Destination port**: `80`
+      * **Forward to IP**: The IP address of your server (e.g., `192.168.1.10`).
+      * **Forward to port**: `80`
+      * **Remark**: Give it a unique and descriptive remark, like `"certbot-http-renewal"`. This remark is how the script identifies the rule.
+      * **IMPORTANT**: Leave this rule **DISABLED** (unchecked). The script will enable it only when needed.
 
-1.  **On IPFire**, generate an SSH key for root and copy it to the DMZ server. This procedure follows a safe workflow: first, we'll use your existing password login to set up the SSH key. Only after confirming the key works will we disable password logins to harden the server.
+2.  **SSH Key-Based Login**: Set up SSH keys to allow the `root` user on IPFire to log into the target server without a password.
 
-    ```bash
-    # Generate the key
-    ssh-keygen -t rsa -b 4096
+      * On IPFire, as `root`, run `ssh-keygen`.
+      * Copy the public key to the target server:
+      ```bash
+      cat ~/.ssh/id_rsa.pub | ssh your_user@dmz_server_ip "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+      ```.
 
-    # Copy the key (use your DMZ server's user and IP)
-    cat ~/.ssh/id_rsa.pub | ssh your_user@dmz_server_ip "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
-    ```
-
-2.  **Test the Key-Based Connection**, Before proceeding, you must verify that the key works.
-
-    a. Log out of your DMZ server.
-
-    b. Log back in from the IPFire console:
-    ```bash
-    ssh your_user@dmz_server_ip
-    ```
-    c. If it connects without asking for a password, your key is set up correctly. If it still asks for a password, something went wrong in the previous step and you must troubleshoot it before continuing.
-
-3.  **On the DMZ Server**, edit `/etc/ssh/sshd_config` to add a layered defense:
-
-    ```bash
-    # Layer 1: Tell SSH to only listen on this server's specific IP address.
-    ListenAddress 192.168.1.10  #<-- Use DMZ Server's IP
-
-    # Layer 2: Only allow 'your_user' to log in, and ONLY from IPFire's IP.
-    AllowUsers your_user@192.168.1.1 #<-- Use IPFire's ORANGE IP
-
-    # Layer 3 (HIGHLY RECOMMENDED): Disable all password-based logins.
-    PasswordAuthentication no
-    ChallengeResponseAuthentication no
-    UsePAM no
-    ```
-4.  **Restart the SSH service** on the DMZ server: `sudo systemctl restart sshd`
-
-5.  **(Optional) Add a Local Firewall** For even more security, you can use a local firewall on the DMZ server.
-
-    a. On the DMZ server, install ufw:
-    ```bash
-    sudo apt update && sudo apt install ufw
-    ```
-    b. Add rules to allow web traffic and SSH only from IPFire:
-    ```bash
-    # Allow web traffic from anywhere
-    sudo ufw allow http
-    sudo ufw allow https
-    # Allow SSH only from your IPFire router's ORANGE IP
-    sudo ufw allow from 192.168.1.1 to any port 22
-    ```
-    c. Enable the firewall:
-    ```bash
-    sudo ufw enable
-    ```
 ### Part 3: Install the Script on IPFire
 
 1.  Place the `cert_renewal_handler.sh` script in `/usr/local/bin/` on the **IPFire router**.
@@ -112,11 +68,11 @@ Set up passwordless SSH access and harden the SSH server on your DMZ machine.
     ```bash
     bash /usr/local/bin/cert_renewal_handler.sh nextcloudadmin 192.168.1.10 "certbot-http-renewal"
     ```
-5.  **Check the Log File**: Review the output in the log file for any errors
+5.  **Check the Log File**: Review the output in the log file for any errors.
     ```bash
     cat /var/log/cert_renewal.log
-    ````
-    
+    ```
+
 -----
 
 ## 🚀 Operation & Monitoring
@@ -132,7 +88,6 @@ nano /var/spool/fcron/root.fcrontab
 Add this line to run the script twice a day, as recommended by Let's Encrypt:
 
 ```
-# Check for certificate renewal twice daily
 # Check for Nextcloud certificate renewal twice daily
 # Usage: bash <script_path> <ssh_user> <target_server_ip> <port_forward_remark>
 15 2,14 * * * bash /usr/local/bin/cert_renewal_handler.sh nextcloudadmin 192.168.1.10 "certbot-http-renewal"
@@ -140,7 +95,7 @@ Add this line to run the script twice a day, as recommended by Let's Encrypt:
 
 ### Integrate Logs with the WUI
 
-Make the script's logs viewable in the IPFire WUI. This change is **update-proof**.
+Make the script's logs viewable in the IPFire Web User Interface. This change is **update-proof**.
 
 1.  On **IPFire**, edit `/etc/rc.d/rc.local`:
     ```bash
