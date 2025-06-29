@@ -25,7 +25,7 @@
 LOG_FILE="/var/log/cert_renewal.log"
 
 # Path to the IPFire configuration files.
-LOCATION_SETTINGS_FILE="/var/ipfire/location/settings"
+LOCATION_BLOCK_FILE="/var/ipfire/firewall/locationblock"
 PORT_FORWARD_RULES_FILE="/var/ipfire/firewall/config"
 # --- End of Static Configuration ---
 
@@ -88,10 +88,12 @@ reload_firewall() {
 toggle_location_block() {
     local state=$1 # Takes one argument: "on" or "off"
     log "Turning Location Block ${state^^}..."
+
+    # We find the master key within the locationblock file and change its value.
     if [ "$state" == "on" ]; then
-        sed -i 's/LOCATIONBLOCK_ENABLED=off/LOCATIONBLOCK_ENABLED=on/' "$LOCATION_SETTINGS_FILE"
+        sed -i 's/LOCATIONBLOCK_ENABLED=off/LOCATIONBLOCK_ENABLED=on/' "$LOCATION_BLOCK_FILE"
     else
-        sed -i 's/LOCATIONBLOCK_ENABLED=on/LOCATIONBLOCK_ENABLED=off/' "$LOCATION_SETTINGS_FILE"
+        sed -i 's/LOCATIONBLOCK_ENABLED=on/LOCATIONBLOCK_ENABLED=off/' "$LOCATION_BLOCK_FILE"
     fi
 }
 
@@ -126,13 +128,12 @@ cleanup() {
     log "--- Executing security cleanup ---"
 
     # --- Secure Port Forwarding ---
-    # Always ensure the port forward rule is disabled.
     log "Cleanup: Making sure Port Forward rule is disabled."
-    toggle_port_forward "off" # This will comment out the rule.
+    toggle_port_forward "off"
 
     # --- Secure Location Block ---
-    # If the Location Block was turned off, turn it back on.
-    if grep -q "LOCATIONBLOCK_ENABLED=off" "$LOCATION_SETTINGS_FILE"; then
+    # Check if the master switch in the file is actually off before re-enabling.
+    if grep -q "LOCATIONBLOCK_ENABLED=off" "$LOCATION_BLOCK_FILE"; then
         log "Cleanup: Re-enabling Location Block for security."
         toggle_location_block "on"
     else
@@ -140,7 +141,6 @@ cleanup() {
     fi
 
     # --- Finalize ---
-    # The final, single reload applies all cleanup changes at once.
     reload_firewall
     log "Cleanup complete. Network secured."
 }
