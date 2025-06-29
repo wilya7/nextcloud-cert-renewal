@@ -26,7 +26,7 @@ LOG_FILE="/var/log/cert_renewal.log"
 
 # Path to the IPFire configuration files.
 LOCATION_SETTINGS_FILE="/var/ipfire/location/settings"
-PORT_FORWARD_RULES_FILE="/var/ipfire/firewall/dnat"
+PORT_FORWARD_RULES_FILE="/var/ipfire/firewall/config"
 # --- End of Static Configuration ---
 
 
@@ -99,24 +99,23 @@ toggle_location_block() {
 toggle_port_forward() {
     local state=$1 # Takes one argument: "on" (enable) or "off" (disable)
 
-    # First, check if a rule with the specified remark actually exists in the file.
-    if ! grep -q "$PORT_FORWARD_REMARK" "$PORT_FORWARD_RULES_FILE"; then
-        log "ERROR: Cannot find a port forward rule with the remark '$PORT_FORWARD_REMARK'."
-        log "Please create the rule in the WUI and set its remark correctly."
-        # We exit here because without the rule, the script cannot succeed.
+    # Check if a rule with the specified remark actually exists.
+    # We now look for a line starting with DNAT= that also contains the remark.
+    if ! grep -q "^DNAT=.*${PORT_FORWARD_REMARK}$" "$PORT_FORWARD_RULES_FILE"; then
+        log "ERROR: Cannot find an active DNAT rule with the remark '$PORT_FORWARD_REMARK'."
+        log "Please check the rule in the WUI; it must be a Destination NAT (Port Forward) rule."
         exit 1
     fi
 
     if [ "$state" == "on" ]; then
         log "ENABLING Port Forward rule: '$PORT_FORWARD_REMARK'"
-        # Use 'sed' to find the line containing our remark and uncomment it (s/^#//).
-        # The -i flag edits the file in-place.
-        sed -i "/$PORT_FORWARD_REMARK/s/^#//" "$PORT_FORWARD_RULES_FILE"
+        # Find the line starting with DNAT=, containing the remark, and change its
+        # FIRST field from 'off' to 'on'. The rule fields are comma-separated.
+        sed -i "/^DNAT=.*,${PORT_FORWARD_REMARK}$/s/off/on/" "$PORT_FORWARD_RULES_FILE"
     else
         log "DISABLING Port Forward rule: '$PORT_FORWARD_REMARK'"
-        # Use 'sed' to find the line and comment it (s/^/#/).
-        # This will not add a second '#' if one already exists.
-        sed -i "/$PORT_FORWARD_REMARK/s/^#*\(.*\)/#\1/" "$PORT_FORWARD_RULES_FILE"
+        # Find the line and change its FIRST field from 'on' to 'off'.
+        sed -i "/^DNAT=.*,${PORT_FORWARD_REMARK}$/s/on/off/" "$PORT_FORWARD_RULES_FILE"
     fi
 }
 
