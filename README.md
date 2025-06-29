@@ -105,9 +105,9 @@ Set up passwordless SSH access and harden the SSH server on your DMZ machine.
     ```
 ### Part 3: Install the Script on IPFire
 
-1.  Place the `cert_renewal_handler.sh` script in `/usr/local/sbin/` on the **IPFire router**.
-2.  **Make it executable**: `chmod +x /usr/local/sbin/cert_renewal_handler.sh`.
-3.  **Test the Help Message**: `bash /usr/local/sbin/cert_renewal_handler.sh --help`
+1.  Place the `cert_renewal_handler.sh` script in `/usr/local/bin/` on the **IPFire router**.
+2.  **Make it executable**: `chmod +x /usr/local/bin/cert_renewal_handler.sh`.
+3.  **Test the Help Message**: `bash /usr/local/bin/cert_renewal_handler.sh --help`
 4.  **Run the Full Script Manually**:
     ```bash
     bash /usr/local/sbin/cert_renewal_handler.sh nextcloudadmin 192.168.1.10 "certbot-http-renewal"
