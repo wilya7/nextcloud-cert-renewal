@@ -49,17 +49,27 @@ Create a disabled-by-default NAT rule that the script can activate when needed.
 
 Set up passwordless SSH access and harden the SSH server on your DMZ machine.
 
-1.  **On IPFire**, generate an SSH key for root and copy it to the DMZ server:
+1.  **On IPFire**, generate an SSH key for root and copy it to the DMZ server. This procedure follows a safe workflow: first, we'll use your existing password login to set up the SSH key. Only after confirming the key works will we disable password logins to harden the server.
 
     ```bash
     # Generate the key
     ssh-keygen -t rsa -b 4096
 
     # Copy the key (use your DMZ server's user and IP)
-    ssh-copy-id your_user@dmz_server_ip
+    cat ~/.ssh/id_rsa.pub | ssh your_user@dmz_server_ip "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
     ```
 
-2.  **On the DMZ Server**, edit `/etc/ssh/sshd_config` to add a layered defense:
+2.  **Test the Key-Based Connection**, Before proceeding, you must verify that the key works.
+
+    a. Log out of your DMZ server.
+
+    b. Log back in from the IPFire console:
+    ```bash
+    ssh your_user@dmz_server_ip
+    ```
+    c. If it connects without asking for a password, your key is set up correctly. If it still asks for a password, something went wrong in the previous step and you must troubleshoot it before continuing.
+
+3.  **On the DMZ Server**, edit `/etc/ssh/sshd_config` to add a layered defense:
 
     ```bash
     # Layer 1: Tell SSH to only listen on this server's specific IP address.
@@ -67,11 +77,15 @@ Set up passwordless SSH access and harden the SSH server on your DMZ machine.
 
     # Layer 2: Only allow 'your_user' to log in, and ONLY from IPFire's IP.
     AllowUsers your_user@192.168.1.1 #<-- Use IPFire's ORANGE IP
+
+    # Layer 3 (HIGHLY RECOMMENDED): Disable all password-based logins.
+    PasswordAuthentication no
+    ChallengeResponseAuthentication no
+    UsePAM no
     ```
+4.  **Restart the SSH service** on the DMZ server: `sudo systemctl restart sshd`
 
-3.  **Restart the SSH service** on the DMZ server: `sudo systemctl restart sshd`
-
-4.  **(Optional) Add a Local Firewall** For even more security, you can use a local firewall on the DMZ server.
+5.  **(Optional) Add a Local Firewall** For even more security, you can use a local firewall on the DMZ server.
 
     a. On the DMZ server, install ufw:
     ```bash
