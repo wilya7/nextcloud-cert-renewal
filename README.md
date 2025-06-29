@@ -71,6 +71,23 @@ Set up passwordless SSH access and harden the SSH server on your DMZ machine.
 
 3.  **Restart the SSH service** on the DMZ server: `sudo systemctl restart sshd`
 
+4.  **(Optional) Add a Local Firewall** For even more security, you can use a local firewall on the DMZ server.
+    a. On the DMZ server, install ufw:
+    ```bash
+    sudo apt update && sudo apt install ufw
+    ```
+    b. Add rules to allow web traffic and SSH only from IPFire:
+    ```bash
+    # Allow web traffic from anywhere
+    sudo ufw allow http
+    sudo ufw allow https
+    # Allow SSH only from your IPFire router's ORANGE IP
+    sudo ufw allow from 192.168.1.1 to any port 22
+    ```
+    c. Enable the firewall:
+    ```bash
+    sudo ufw enable
+    ```
 ### Part 3: Install the Script on IPFire
 
 1.  Place the `cert_renewal_handler.sh` script in `/usr/local/sbin/` on the **IPFire router**.
