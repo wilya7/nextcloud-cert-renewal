@@ -110,7 +110,7 @@ Set up passwordless SSH access and harden the SSH server on your DMZ machine.
 3.  **Test the Help Message**: `bash /usr/local/bin/cert_renewal_handler.sh --help`
 4.  **Run the Full Script Manually**:
     ```bash
-    bash /usr/local/sbin/cert_renewal_handler.sh nextcloudadmin 192.168.1.10 "certbot-http-renewal"
+    bash /usr/local/bin/cert_renewal_handler.sh nextcloudadmin 192.168.1.10 "certbot-http-renewal"
     ```
 5.  **Check the Log File**: Review the output in the log file for any errors
     ```bash
@@ -135,7 +135,7 @@ Add this line to run the script twice a day, as recommended by Let's Encrypt:
 # Check for certificate renewal twice daily
 # Check for Nextcloud certificate renewal twice daily
 # Usage: bash <script_path> <ssh_user> <target_server_ip> <port_forward_remark>
-15 2,14 * * * bash /usr/local/sbin/cert_renewal_handler.sh nextcloudadmin 192.168.1.10 "certbot-http-renewal"
+15 2,14 * * * bash /usr/local/bin/cert_renewal_handler.sh nextcloudadmin 192.168.1.10 "certbot-http-renewal"
 ```
 
 ### Integrate Logs with the WUI
