@@ -131,20 +131,25 @@ toggle_port_forward() {
 
 # --- Cleanup Function (CRITICAL FOR SECURITY) ---
 # This function is registered with 'trap' to ALWAYS run when the script exits.
+# It is designed to be idempotent, ensuring the firewall is always returned
+# to a known, secure state, regardless of the script's state at exit.
 cleanup() {
     log "--- Executing security cleanup ---"
+
     # --- Secure Port Forwarding ---
-    log "Cleanup: Making sure Port Forward rule is disabled."
+    # Unconditionally set the Port Forward rule state to 'off'. The underlying
+    # awk command ensures the target field is always set to "" (disabled).
+    log "Cleanup: Forcing Port Forward rule to DISABLED."
     toggle_port_forward "off"
+
     # --- Secure Location Block ---
-    # Check if the master switch in the file is actually off before re-enabling.
-    if grep -q "LOCATIONBLOCK_ENABLED=off" "$LOCATION_BLOCK_FILE"; then
-        log "Cleanup: Re-enabling Location Block for security."
-        toggle_location_block "on"
-    else
-        log "Cleanup: Location Block is already ON. No changes needed."
-    fi
+    # Unconditionally set the Location Block to 'on'. The underlying sed
+    # command ensures the final state is always LOCATIONBLOCK_ENABLED=on.
+    log "Cleanup: Forcing Location Block to ENABLED."
+    toggle_location_block "on"
+
     # --- Finalize ---
+    # Reload the firewall to apply the secure configuration.
     reload_firewall
     log "Cleanup complete. Network secured."
 }
