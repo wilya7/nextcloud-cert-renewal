@@ -1,6 +1,5 @@
 #!/bin/bash
 # =================================================================================
-#
 #           Nextcloud Certificate Renewal Handler for IPFire
 #
 # This script automates Let's Encrypt certificate renewal for a server
@@ -8,27 +7,25 @@
 #
 #                               -- HOW IT WORKS --
 #
-# 1. It checks if the certificate is due for renewal using a 'dry-run'.
-# 2. If renewal is needed:
+# 1. It fetches the certificate details from the target server.
+# 2. It parses the expiry date and checks if it's within 30 days.
+# 3. If renewal is needed:
 #    a. It enables a specific, pre-configured Port Forwarding rule (Port 80).
 #    b. It temporarily disables the Location Block filter.
-# 3. It triggers the real certificate renewal on the remote server.
-# 4. It logs the outcome (success or failure).
-# 5. CRITICALLY, it ensures BOTH the Port Forward and Location Block are
-#    reverted to their secure, default states afterwards.
+#    c. It triggers the real certificate renewal on the remote server.
+#    d. It logs the outcome (success or failure).
+# 4. CRITICALLY, it ensures BOTH the Port Forward and Location Block are
+#    reverted to their secure, default states afterwards via a cleanup trap.
 #
 # =================================================================================
-
 
 # --- Static Configuration ---
 # Location for the log file on the IPFire machine.
 LOG_FILE="/var/log/cert_renewal.log"
-
 # Path to the IPFire configuration files.
 LOCATION_BLOCK_FILE="/var/ipfire/firewall/locationblock"
 PORT_FORWARD_RULES_FILE="/var/ipfire/firewall/config"
 # --- End of Static Configuration ---
-
 
 # --- Argument Parsing ---
 # Check for a help flag first.
@@ -36,7 +33,8 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
     echo "Usage: $0 <ssh_user> <target_server_ip> <port_forward_remark>"
     echo ""
     echo "This script automates Let's Encrypt certificate renewal for a server in the IPFire DMZ."
-    echo "It temporarily modifies firewall rules, runs certbot on the remote server via SSH,"
+    echo "It checks the certificate's expiry date, and if renewal is needed, it temporarily"
+    echo "modifies firewall rules, runs certbot on the remote server via SSH,"
     echo "and safely restores all security settings afterwards."
     echo ""
     echo "Arguments:"
@@ -46,20 +44,17 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
     echo ""
     exit 0
 fi
-
 # Check for the correct number of operational arguments.
 if [ "$#" -ne 3 ]; then
     echo "ERROR: Incorrect number of arguments. Use -h or --help for usage information."
     echo "Usage: $0 <ssh_user> <target_server_ip> <port_forward_remark>"
     exit 1
 fi
-
 # Assign command-line arguments to variables.
 SSH_USER=$1
 NEXTCLOUD_SERVER=$2
 PORT_FORWARD_REMARK=$3
 # --- End of Argument Parsing ---
-
 
 # --- Script Setup ---
 # Ensure we are running as the root user.
@@ -67,10 +62,10 @@ if [ "$EUID" -ne 0 ]; then
   echo "Error: This script must be run as root."
   exit 1
 fi
+# --- End of Script Setup ---
 
 
 # --- Core Functions ---
-
 # Logging function that prepends a timestamp to each log message.
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
@@ -88,7 +83,6 @@ reload_firewall() {
 toggle_location_block() {
     local state=$1 # Takes one argument: "on" or "off"
     log "Turning Location Block ${state^^}..."
-
     # We find the master key within the locationblock file and change its value.
     if [ "$state" == "on" ]; then
         sed -i 's/LOCATIONBLOCK_ENABLED=off/LOCATIONBLOCK_ENABLED=on/' "$LOCATION_BLOCK_FILE"
@@ -103,7 +97,6 @@ toggle_port_forward() {
     local temp_file
     # Create a temporary file safely.
     temp_file=$(mktemp) || { log "ERROR: Failed to create temp file for firewall modification."; exit 1; }
-
     # First, verify the rule actually exists by checking for the unique remark (field 18)
     # and ensuring it is a 'dnat' rule (field 33). This is much safer.
     # The awk script will exit with success (0) if found, and failure (1) otherwise.
@@ -113,7 +106,6 @@ toggle_port_forward() {
         rm -f "$temp_file"
         exit 1
     fi
-
     # Use awk to find the line based on remark and rule type, then set the 4th field.
     if [ "$state" == "on" ]; then
         log "ENABLING Port Forward rule: '$PORT_FORWARD_REMARK'"
@@ -122,7 +114,6 @@ toggle_port_forward() {
         log "DISABLING Port Forward rule: '$PORT_FORWARD_REMARK'"
         awk -v remark="$PORT_FORWARD_REMARK" 'BEGIN{FS=OFS=","} {if($18==remark && $33=="dnat"){$4=""}; print}' "$PORT_FORWARD_RULES_FILE" > "$temp_file"
     fi
-
     # Atomically and safely replace the original file with the modified version.
     # We check that the temp file is not empty before overwriting the original.
     if [ -s "$temp_file" ]; then
@@ -135,17 +126,16 @@ toggle_port_forward() {
         exit 1
     fi
 }
+# --- End of Core Functions ---
 
 
 # --- Cleanup Function (CRITICAL FOR SECURITY) ---
 # This function is registered with 'trap' to ALWAYS run when the script exits.
 cleanup() {
     log "--- Executing security cleanup ---"
-
     # --- Secure Port Forwarding ---
     log "Cleanup: Making sure Port Forward rule is disabled."
     toggle_port_forward "off"
-
     # --- Secure Location Block ---
     # Check if the master switch in the file is actually off before re-enabling.
     if grep -q "LOCATIONBLOCK_ENABLED=off" "$LOCATION_BLOCK_FILE"; then
@@ -154,50 +144,78 @@ cleanup() {
     else
         log "Cleanup: Location Block is already ON. No changes needed."
     fi
-
     # --- Finalize ---
     reload_firewall
     log "Cleanup complete. Network secured."
 }
 
-# Register the cleanup function to be called on script exit.
-trap cleanup EXIT
+# Register the cleanup function to be called on script exit (EXIT), hangup (HUP),
+# interrupt (INT), quit (QUIT), or termination (TERM) signals for robustness.
+trap cleanup EXIT HUP INT QUIT TERM
+# --- End of Cleanup Function ---
 
-# --- Main Script Logic ---
+
+# --- Main Script Logic (REWRITTEN) ---
 log "--- Starting Nextcloud Certificate Renewal Check ---"
 
-# Step 1: Temporarily open the firewall for the ACME challenge.
-log "Temporarily opening firewall for dry-run check..."
-
-toggle_location_block "off" # Disable country blocking
-toggle_port_forward "on"    # Enable the port 80 forward rule
-
-# Apply the insecure settings with a single reload.
-reload_firewall
-
-# Step 2: Check if renewal is needed using a dry-run.
-log "Performing a dry-run renewal check on $NEXTCLOUD_SERVER..."
-# We check for certbot's "skipped" message. If found, we exit cleanly.
-if ssh "$SSH_USER@$NEXTCLOUD_SERVER" "sudo certbot renew --dry-run" 2>&1 | grep -qiF "No renewals were attempted"; then
-    log "Check complete. Certificate is not yet due for renewal."
-    log "--- Script Finished ---"
-    exit 0 # Exit gracefully. The 'trap' will still run cleanup as a precaution.
+# Step 1: Get certificate expiry date from the remote server.
+log "Fetching certificate status from $NEXTCLOUD_SERVER..."
+CERT_INFO=$(ssh "$SSH_USER@$NEXTCLOUD_SERVER" "sudo certbot certificates" 2>&1)
+if [ $? -ne 0 ]; then
+    log "FAILURE: Could not connect or run certbot on $NEXTCLOUD_SERVER. SSH Error."
+    log "--- SSH Output ---"
+    echo "$CERT_INFO" >> "$LOG_FILE" # Log the actual error from SSH
+    log "--------------------"
+    exit 1
 fi
 
-log "Renewal is due or dry-run failed. Proceeding with live renewal attempt."
+# Step 2: Parse the expiry date and check if renewal is needed.
+# This awk command finds the "Expiry Date" line, isolates the date string,
+# and removes the "(VALID: ...)" part and any leading/trailing whitespace.
+EXPIRY_DATE_STR=$(echo "$CERT_INFO" | awk -F'Expiry Date: ' '/Expiry Date:/ {print $2}' | cut -d'(' -f1 | sed 's/^[ \t]*//;s/[ \t]*$//')
 
-# Step 3: Perform the actual certificate renewal.
-log "Issuing REAL certificate renewal command on $NEXTCLOUD_SERVER..."
-if ssh "$SSH_USER@$NEXTCLOUD_SERVER" "sudo certbot renew --quiet" >> "$LOG_FILE" 2>&1; then
-    log "SUCCESS: Certificate renewal completed successfully."
+if [ -z "$EXPIRY_DATE_STR" ]; then
+    log "FAILURE: Could not parse expiry date from 'certbot certificates' output."
+    log "--- Full output from certbot ---"
+    echo "$CERT_INFO" >> "$LOG_FILE"
+    log "--------------------------------"
+    exit 1
+fi
+
+log "Found Expiry Date: $EXPIRY_DATE_STR"
+
+# Convert expiry date and current date to seconds since epoch for comparison.
+# This is a reliable way to compare dates in bash.
+EXPIRY_SECONDS=$(date +%s -d "$EXPIRY_DATE_STR")
+CURRENT_SECONDS=$(date +%s)
+DAYS_LEFT=$(((EXPIRY_SECONDS - CURRENT_SECONDS) / 86400))
+
+log "Certificate is valid for $DAYS_LEFT days."
+
+# Define the renewal threshold in days (Let's Encrypt recommends renewing with 30 days left)
+RENEWAL_THRESHOLD=30
+
+if [ "$DAYS_LEFT" -le "$RENEWAL_THRESHOLD" ]; then
+    log "Certificate is due for renewal ($DAYS_LEFT days remaining is <= $RENEWAL_THRESHOLD)."
+
+    # Step 3: Open the firewall for the ACME challenge.
+    log "Temporarily opening firewall for renewal..."
+    toggle_location_block "off"
+    toggle_port_forward "on"
+    reload_firewall
+
+    # Step 4: Perform the actual certificate renewal.
+    log "Issuing REAL certificate renewal command on $NEXTCLOUD_SERVER..."
+    if ssh "$SSH_USER@$NEXTCLOUD_SERVER" "sudo certbot renew --quiet" >> "$LOG_FILE" 2>&1; then
+        log "SUCCESS: Certificate renewal completed successfully."
+    else
+        log "FAILURE: Certificate renewal failed. Check log for details from Certbot."
+    fi
+    # The cleanup trap will handle re-securing the firewall automatically.
+
 else
-    log "FAILURE: Certificate renewal failed. Check log for details from Certbot."
+    log "Certificate is not yet due for renewal. No action needed."
 fi
 
-# Step 4: Rely on the cleanup trap.
-# The 'trap' command at the top of the script will automatically call the
-# 'cleanup' function when the script exits here. This function will disable
-# the port forward, re-enable location block, and reload the firewall.
-log "Renewal attempt finished. Cleanup trap will now re-secure the firewall."
 log "--- Script Finished ---"
 exit 0
