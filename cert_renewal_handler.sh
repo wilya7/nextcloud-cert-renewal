@@ -149,15 +149,13 @@ cleanup() {
 # Register the cleanup function to be called on script exit.
 trap cleanup EXIT
 
-
 # --- Main Script Logic ---
-
 log "--- Starting Nextcloud Certificate Renewal Check ---"
-
 # Step 1: Check if renewal is needed using a dry-run.
 log "Performing a dry-run renewal check on $NEXTCLOUD_SERVER..."
-if ssh "$SSH_USER@$NEXTCLOUD_SERVER" "sudo certbot renew --dry-run" 2>&1 | grep -q "Congratulations, all simulated renewals succeeded"; then
-    log "Dry-run successful. Certificate is not yet due for renewal."
+# We check for certbot's "skipped" message. If found, we exit cleanly.
+if ssh "$SSH_USER@$NEXTCLOUD_SERVER" "sudo certbot renew --dry-run" 2>&1 | grep -q "No renewals were attempted"; then
+    log "Check complete. Certificate is not yet due for renewal."
     log "--- Script Finished ---"
     exit 0 # Exit gracefully. The 'trap' will still run cleanup as a precaution.
 fi
