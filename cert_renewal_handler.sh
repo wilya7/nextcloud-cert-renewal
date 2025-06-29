@@ -23,17 +23,34 @@
 # --- Static Configuration ---
 # Location for the log file on the IPFire machine.
 LOG_FILE="/var/log/cert_renewal.log"
+
+# Path to the IPFire configuration files.
+LOCATION_SETTINGS_FILE="/var/ipfire/location/settings"
+PORT_FORWARD_RULES_FILE="/var/ipfire/firewall/dnat"
 # --- End of Static Configuration ---
 
+
 # --- Argument Parsing ---
-# This script requires three arguments to be passed from the command line:
-# 1. The SSH username on the target server.
-# 2. The IP address of the target server.
-# 3. The unique remark used for the port forwarding rule.
-if [ "$#" -ne 3 ]; then
-    echo "ERROR: Incorrect number of arguments."
+# Check for a help flag first.
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
     echo "Usage: $0 <ssh_user> <target_server_ip> <port_forward_remark>"
-    echo "Example: $0 nextcloudadmin 192.168.1.10 \"certbot-http-renewal\""
+    echo ""
+    echo "This script automates Let's Encrypt certificate renewal for a server in the IPFire DMZ."
+    echo "It temporarily modifies firewall rules, runs certbot on the remote server via SSH,"
+    echo "and safely restores all security settings afterwards."
+    echo ""
+    echo "Arguments:"
+    echo "  ssh_user              The username on the target server to connect with."
+    echo "  target_server_ip      The IP address of the target server in the ORANGE zone."
+    echo "  port_forward_remark   The unique 'Remark' of the Port 80 NAT rule in the IPFire WUI."
+    echo ""
+    exit 0
+fi
+
+# Check for the correct number of operational arguments.
+if [ "$#" -ne 3 ]; then
+    echo "ERROR: Incorrect number of arguments. Use -h or --help for usage information."
+    echo "Usage: $0 <ssh_user> <target_server_ip> <port_forward_remark>"
     exit 1
 fi
 
@@ -43,12 +60,8 @@ NEXTCLOUD_SERVER=$2
 PORT_FORWARD_REMARK=$3
 # --- End of Argument Parsing ---
 
+
 # --- Script Setup ---
-
-# Path to the IPFire configuration files.
-LOCATION_SETTINGS_FILE="/var/ipfire/location/settings"
-PORT_FORWARD_RULES_FILE="/var/ipfire/firewall/dnat"
-
 # Ensure we are running as the root user.
 if [ "$EUID" -ne 0 ]; then
   echo "Error: This script must be run as root."
