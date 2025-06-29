@@ -165,7 +165,17 @@ trap cleanup EXIT
 
 # --- Main Script Logic ---
 log "--- Starting Nextcloud Certificate Renewal Check ---"
-# Step 1: Check if renewal is needed using a dry-run.
+
+# Step 1: Temporarily open the firewall for the ACME challenge.
+log "Temporarily opening firewall for dry-run check..."
+
+toggle_location_block "off" # Disable country blocking
+toggle_port_forward "on"    # Enable the port 80 forward rule
+
+# Apply the insecure settings with a single reload.
+reload_firewall
+
+# Step 2: Check if renewal is needed using a dry-run.
 log "Performing a dry-run renewal check on $NEXTCLOUD_SERVER..."
 # We check for certbot's "skipped" message. If found, we exit cleanly.
 if ssh "$SSH_USER@$NEXTCLOUD_SERVER" "sudo certbot renew --dry-run" 2>&1 | grep -qiF "No renewals were attempted"; then
@@ -175,14 +185,6 @@ if ssh "$SSH_USER@$NEXTCLOUD_SERVER" "sudo certbot renew --dry-run" 2>&1 | grep 
 fi
 
 log "Renewal is due or dry-run failed. Proceeding with live renewal attempt."
-
-# Step 2: Temporarily open the firewall for the ACME challenge.
-log "Preparing firewall for renewal..."
-toggle_location_block "off" # Disable country blocking
-toggle_port_forward "on"  # Enable the port 80 forward rule
-
-# Apply the insecure settings with a single reload.
-reload_firewall
 
 # Step 3: Perform the actual certificate renewal.
 log "Issuing REAL certificate renewal command on $NEXTCLOUD_SERVER..."
