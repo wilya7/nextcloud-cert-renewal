@@ -43,7 +43,7 @@ Create a disabled-by-default NAT rule that the script can activate when needed.
 4.  **Destination**: The static IP of your DMZ server.
 5.  **Protocol**: `TCP`, Destination Port `80`.
 6.  **Remark**: `certbot-http-renewal`  *(This must match the script's configuration)*.
-7.  ***Save the rule**, making sure it is **DISABLED** (unchecked).
+7.  **Save the rule**, making sure it is **DISABLED** (unchecked).
 
 ### Part 2: Secure SSH Connection
 
