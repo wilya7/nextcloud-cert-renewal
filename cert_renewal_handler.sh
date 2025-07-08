@@ -177,7 +177,22 @@ fi
 # Step 2: Parse the expiry date and check if renewal is needed.
 # This awk command finds the "Expiry Date" line, isolates the date string,
 # and removes the "(VALID: ...)" part and any leading/trailing whitespace.
-EXPIRY_DATE_STR=$(echo "$CERT_INFO" | awk -F'Expiry Date: ' '/Expiry Date:/ {print $2}' | cut -d'(' -f1 | sed 's/^[ \t]*//;s/[ \t]*$//')
+
+EXPIRY_DATE_STR=$(
+  printf '%s\n' "$CERT_INFO" \
+  | awk '
+      /Expiry Date:/ {
+        sub(/.*Expiry Date: /, "")      # drop everything through "Expiry Date: "
+        sub(/\s*\(.*/, "")              # drop space + "(" + anything after
+        gsub(/^[ \t]+|[ \t]+$/, "")     # trim leading/trailing whitespace
+        if (length($0) > 0) print       # only print if we have content
+        found = 1
+      }
+      END { if (!found) exit 1 }        # exit with error if not found
+    '
+)
+
+# EXPIRY_DATE_STR=$(echo "$CERT_INFO" | awk -F'Expiry Date: ' '/Expiry Date:/ {print $2}' | cut -d'(' -f1 | sed 's/^[ \t]*//;s/[ \t]*$//')
 
 if [ -z "$EXPIRY_DATE_STR" ]; then
     log "FAILURE: Could not parse expiry date from 'certbot certificates' output."
