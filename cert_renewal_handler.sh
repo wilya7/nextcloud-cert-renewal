@@ -144,7 +144,7 @@ log "--- Starting Nextcloud Certificate Renewal Check ---"
 
 # Step 1: Get certificate expiry date from the remote server.
 log "Fetching certificate status from $NEXTCLOUD_SERVER..."
-CERT_INFO=$(ssh "$SSH_USER@$NEXTCLOUD_SERVER" "sudo certbot certificates" 2>&1)
+CERT_INFO=$(ssh "$SSH_USER@$NEXTCLOUD_SERVER" "check" 2>&1)
 if [ $? -ne 0 ]; then
     log "FAILURE: Could not connect or run certbot on $NEXTCLOUD_SERVER. SSH Error."
     # Pipe the multi-line error output to logger to ensure it gets logged.
@@ -193,7 +193,7 @@ if [ "$DAYS_LEFT" -le "$RENEWAL_THRESHOLD" ]; then
 
     # Step 4: Perform the actual certificate renewal.
     log "Issuing certificate renewal command on $NEXTCLOUD_SERVER..."
-    if ssh "$SSH_USER@$NEXTCLOUD_SERVER" "sudo certbot renew --quiet"; then
+    if ssh "$SSH_USER@$NEXTCLOUD_SERVER" "renew"; then
         log "SUCCESS: Certificate renewal completed successfully."
     else
         log "FAILURE: Certificate renewal failed. Check system logs for details from Certbot."
