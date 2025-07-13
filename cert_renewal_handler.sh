@@ -68,7 +68,7 @@ fi
 # --- Core Functions ---
 # Logging function that prepends a timestamp to each log message.
 log() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
+		logger -t "CertRenewal" "$1"
 }
 
 # Reload the firewall, making any config changes active.
