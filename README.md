@@ -124,7 +124,7 @@ Run manually to verify connectivity and logic:
 /usr/local/bin/cert_renewal_handler.sh <SSH_USER> <DMZ_SERVER_IP> "<NAT_RULE_REMARK>"
 ```
 
-Automate via cron or fcron (e.g., twice daily):
+Automate via fcron (e.g., twice daily):
 
 ```cron
 # m h dom mon dow command
@@ -149,7 +149,7 @@ Automate via cron or fcron (e.g., twice daily):
 
 ## 🔍 Maintenance & Auditing
 
-* **Wrapper Logs**: Append wrapper output to a log file (e.g., `/var/log/certbot-renewal.log`).
+* **Log Monitoring**: All script operations are logged to the central system log. Review these logs for errors or successful renewal confirmations under **Logs → System Logs** in the WUI, filtering by the tag `CertRenewal`.
 * **Key Rotation**: Regularly rotate SSH keys and update `authorized_keys` entries.
 * **Configuration Updates**: Update sudoers, wrapper script, and handler arguments when certbot paths or challenge methods change.
 
